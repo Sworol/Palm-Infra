@@ -47,6 +47,46 @@ def tiny_cfg(layer_type="linear_attention", mtp_layers=0):
         },
     }
 
+def official_4b_cfg():
+    layer_block = [
+        "linear_attention", "linear_attention", "linear_attention",
+        "full_attention",
+    ]
+    return {
+        "model_type": "qwen3_5",
+        "text_config": {
+            "hidden_size": 2560,
+            "num_hidden_layers": 32,
+            "layer_types": layer_block * 8,
+            "rms_norm_eps": 1e-6,
+            "rope_parameters": {
+                "rope_theta": 10000000.0,
+                "partial_rotary_factor": 0.25,
+            },
+            "num_attention_heads": 16,
+            "num_key_value_heads": 4,
+            "head_dim": 256,
+            "linear_num_key_heads": 16,
+            "linear_key_head_dim": 128,
+            "linear_value_head_dim": 128,
+            "linear_num_value_heads": 32,
+            "linear_conv_kernel_dim": 4,
+            "intermediate_size": 9216,
+            "vocab_size": 248320,
+            "mtp_num_hidden_layers": 1,
+        },
+    }
+
+
+def find_named_node(graph, op_type, suffix):
+    matches = [
+        node for node in graph._nodes
+        if node.op_type == op_type and node.params_str
+        and node.params_str[0].endswith(suffix)
+    ]
+    check(len(matches) == 1, f"expected one graph node ending in {suffix}")
+    return matches[0]
+
 
 def main():
     graph = build_graph(
@@ -247,6 +287,92 @@ def main():
             struct.pack("<II", verify_node.id, 113) in raw,
             "serialized graph blob contains op type 113",
         )
+
+    official_cfg = official_4b_cfg()
+    official_graph = build_graph(
+        ".", official_cfg, seq_len=2, n_ctx=64, is_prefill=True
+    )
+    official_gdn = [
+        node for node in official_graph._nodes
+        if node.op_type == OpType.GATED_DELTANET_PREFILL
+    ]
+    official_sdpa = [
+        node for node in official_graph._nodes
+        if node.op_type == OpType.SDPA
+    ]
+    check(
+        len(official_gdn) == 24 and len(official_sdpa) == 8
+        and sum(node.op_type == OpType.SWIGLU
+                for node in official_graph._nodes) == 32,
+        "official 4B shape builds 32 layers: 24 GDN and 8 SDPA",
+    )
+    check(
+        all(node.params_i32[0] == 16 and node.params_i32[7] == 32
+            for node in official_gdn),
+        "official 4B GDN uses 16 key heads and 32 value heads",
+    )
+    check(
+        all(node.out_shape[:2] == (4096, 2) for node in official_gdn),
+        "official 4B GDN output width is 4096",
+    )
+
+    official_state = find_named_node(
+        official_graph, OpType.INPUT, "gdn_state0")
+    official_conv_state = find_named_node(
+        official_graph, OpType.INPUT, "gdn_conv0")
+    check(
+        official_state.out_shape[:3] == (128, 128, 32),
+        "official 4B GDN state shape is [128,128,32]",
+    )
+    check(
+        official_conv_state.out_shape[:2] == (8192, 3),
+        "official 4B convolution state shape is [8192,3]",
+    )
+
+    official_linear_in = find_named_node(
+        official_graph, OpType.CONSTANT,
+        "model_language_model_layers_0_linear_attn_in_proj_weight.weights")
+    official_gdn_out = find_named_node(
+        official_graph, OpType.CONSTANT,
+        "model_language_model_layers_0_linear_attn_out_proj_weight.weights")
+    official_qkv = find_named_node(
+        official_graph, OpType.CONSTANT,
+        "model_language_model_layers_3_self_attn_qkv_proj_weight.weights")
+    official_mlp = find_named_node(
+        official_graph, OpType.CONSTANT,
+        "model_language_model_layers_0_mlp_gate_up_proj_weight.weights")
+    check(
+        official_linear_in.out_shape[:2] == (12352, 2560),
+        "official 4B fused GDN input projection is [12352,2560]",
+    )
+    check(
+        official_gdn_out.out_shape[:2] == (2560, 4096),
+        "official 4B GDN output projection consumes width 4096",
+    )
+    check(
+        official_qkv.out_shape[:2] == (10240, 2560),
+        "official 4B full-attention fused QKV is [10240,2560]",
+    )
+    check(
+        official_mlp.out_shape[:2] == (18432, 2560),
+        "official 4B fused MLP gate/up is [18432,2560]",
+    )
+
+    official_mtp_graph = build_mtp_graph(
+        ".", official_cfg, seq_len=2, n_ctx=64)
+    official_mtp_fc = find_named_node(
+        official_mtp_graph, OpType.CONSTANT, "mtp_fc_weight.weights")
+    official_mtp_qkv = find_named_node(
+        official_mtp_graph, OpType.CONSTANT,
+        "mtp_layers_0_self_attn_qkv_proj_weight.weights")
+    check(
+        official_mtp_fc.out_shape[:2] == (2560, 5120),
+        "official 4B MTP FC is [2560,5120]",
+    )
+    check(
+        official_mtp_qkv.out_shape[:2] == (10240, 2560),
+        "official 4B MTP fused QKV is [10240,2560]",
+    )
 
     complete_names = {name: object() for name in _QWEN35_MTP_REQUIRED_WEIGHTS}
     check(

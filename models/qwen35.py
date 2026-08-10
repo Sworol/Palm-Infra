@@ -19,6 +19,10 @@ from pathlib import Path
 
 import numpy as np
 
+from collections.abc import Mapping
+from typing import Iterator
+
+from safetensors_stream import SafeTensorIndex
 from transpile import (
     GraphBuilder, Precision, _write_weight_file,
     quantize_weight_w8_group, save_package,
@@ -121,6 +125,45 @@ def load_safetensors(path: str) -> dict[str, np.ndarray]:
                 arr = as_u32.view(np.float32)
             tensors[name] = arr
     return tensors
+
+
+class _LazySafeTensors(Mapping[str, np.ndarray]):
+    """Load one indexed safetensor at a time during conversion."""
+
+    _DTYPES = {
+        "F16": np.dtype("<f2"),
+        "F32": np.dtype("<f4"),
+        "BF16": np.dtype("<u2"),
+    }
+
+    def __init__(self, model_dir: Path):
+        self._index = SafeTensorIndex(model_dir)
+        self._names = tuple(
+            name for name in self._index.weight_map
+            if name != "__metadata__"
+        )
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._names)
+
+    def __len__(self) -> int:
+        return len(self._names)
+
+    def __getitem__(self, name: str) -> np.ndarray:
+        tensor = self._index.tensor(name)
+        dtype = self._DTYPES.get(tensor.dtype)
+        if dtype is None:
+            raise ValueError(
+                f"unsupported Qwen3.5 conversion dtype {tensor.dtype}: {name}")
+        with open(tensor.source.path, "rb") as source:
+            source.seek(tensor.source.offset)
+            raw = source.read(tensor.source.size)
+        if len(raw) != tensor.source.size:
+            raise ValueError(f"truncated safetensor payload: {name}")
+        values = np.frombuffer(raw, dtype=dtype)
+        if tensor.dtype == "BF16":
+            values = (values.astype(np.uint32) << 16).view(np.float32)
+        return values.reshape(tensor.shape)
 
 
 def _query_then_gate_rows(
@@ -997,17 +1040,17 @@ def convert_qwen35(model_dir: str, output_path: str, num_layers: int | None = No
               f"using config.json num_hidden_layers={config_num_layers}")
     num_layers = config_num_layers
 
-    # Find safetensors files (may be sharded)
-    st_files = sorted(model_dir.glob('model.safetensors-*.safetensors'))
-    if not st_files:
-        st_files = list(model_dir.glob('model.safetensors'))
-    if not st_files:
-        raise FileNotFoundError(f"No safetensors file in {model_dir}")
-
-    # Load all shards and merge
-    weights = {}
-    for st_path in st_files:
-        weights.update(load_safetensors(str(st_path)))
+    if (model_dir / "model.safetensors.index.json").exists():
+        weights = _LazySafeTensors(model_dir)
+    else:
+        st_files = sorted(model_dir.glob('model.safetensors-*.safetensors'))
+        if not st_files:
+            st_files = list(model_dir.glob('model.safetensors'))
+        if not st_files:
+            raise FileNotFoundError(f"No safetensors file in {model_dir}")
+        weights = {}
+        for st_path in st_files:
+            weights.update(load_safetensors(str(st_path)))
     mtp_layers = _validate_mtp_weights(weights, cfg)
     include_mtp = mtp_layers == 1 and quant == "fp16"
     if mtp_layers and not include_mtp:

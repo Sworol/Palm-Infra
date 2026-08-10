@@ -539,6 +539,24 @@ std::vector<float> LLMEngine::run_lmhead_raw(const Tensor& hidden, int n_tokens,
             return logits;
     }
 #endif
+    bool cpu_fp16_batch = true;
+#ifdef MOLLM_METAL
+    cpu_fp16_batch = !(metal_backend_ && lm_head_weight_->device_data);
+#endif
+    if (all_positions && n_pos == 2 && hidden.shape[1] >= 2 &&
+        hidden.is_contiguous() &&
+        lm_head_weight_->prec == Precision::FP16 && cpu_fp16_batch) {
+        Tensor A = hidden;
+        A.shape[1] = 2;
+        A.compute_strides();
+        Tensor C = Tensor::create(
+            Precision::FP32, MemoryType::EXTERNAL,
+            vocab_size, 2, 1, 1, logits.data());
+        kernel_matmul_fp32(A, *lm_head_weight_, C,
+                           exec_ctx_decode_.thread_pool);
+        return logits;
+    }
+
 
     for (int p = 0; p < n_pos; p++) {
         int pos = all_positions
@@ -779,6 +797,9 @@ Tensor LLMEngine::verify_target_tokens(
     exec_ctx_mtp_verify_.padded_seq_len = -1;
     exec_ctx_mtp_verify_.confirmed_prefix_tokens = 1;
     inject_runtime_shapes(exec_ctx_mtp_verify_);
+    mollm_trace::ScopedEvent trace_verify(
+        "inference", "mtp.verify.transactional");
+
 
     Tensor hidden = embed(token_ids);
     hidden.shape[1] = 2;
@@ -791,9 +812,11 @@ Tensor LLMEngine::verify_target_tokens(
     Tensor token_tensor = Tensor::create(
         Precision::INT32, MemoryType::EXTERNAL, 2, 1, 1, 1,
         graph_token_ids.data());
+    mollm_set_matmul_profile_phase("mtp_verify_graph");
     Tensor output = run_graph(
         graph_mtp_verify_, exec_ctx_mtp_verify_, hidden, mask, cos, sin,
         &token_tensor, false, nullptr, position);
+    mollm_set_matmul_profile_phase("unscoped");
 
     Tensor copied;
     if (output.data && output.prec == Precision::FP32 &&
@@ -807,7 +830,9 @@ Tensor LLMEngine::verify_target_tokens(
     }
 
     if (copied.data && (logits || top1)) {
+        mollm_set_matmul_profile_phase("mtp_verify_lmhead");
         std::vector<float> scores = run_lmhead_raw(copied, 2, true);
+        mollm_set_matmul_profile_phase("unscoped");
         const int vocab = static_cast<int>(lm_head_weight_->shape[0]);
         if (scores.size() != static_cast<size_t>(2 * vocab)) {
             copied = Tensor();
@@ -943,10 +968,13 @@ bool LLMEngine::execute_mtp_tokens(
         device_hidden_copy = &mtp_draft_hidden_device_;
     }
 #endif
+    mollm_set_matmul_profile_phase(
+        cache_only ? "mtp_sync_graph" : "mtp_draft_graph");
     Tensor out = run_graph(
         graph_mtp_, exec_ctx_mtp_, token_hidden, mask, cos, sin,
         nullptr, fuse_metal_lm_head, &target_hidden, position,
         stop_after_node_index);
+    mollm_set_matmul_profile_phase("unscoped");
 
 #ifdef MOLLM_METAL
     if (fuse_metal_lm_head) {
@@ -1698,14 +1726,18 @@ bool LLMEngine::speculative_decode(int token_id,
             return false;
         mtp_current_cached = true;
         if (plain_argmax && draft < 0) {
+            mollm_set_matmul_profile_phase("mtp_draft_lmhead");
             std::vector<float> logits = run_lmhead_raw(mtp_hidden, 1, false);
+            mollm_set_matmul_profile_phase("unscoped");
             if (logits.empty())
                 return false;
             draft = static_cast<int>(
                 std::max_element(logits.begin(), logits.end()) -
                 logits.begin());
         } else if (!plain_argmax) {
+            mollm_set_matmul_profile_phase("mtp_draft_lmhead");
             std::vector<float> logits = run_lmhead_raw(mtp_hidden, 1, false);
+            mollm_set_matmul_profile_phase("unscoped");
             if (logits.size() != static_cast<size_t>(vocab))
                 return false;
             draft_probabilities.emplace_back();

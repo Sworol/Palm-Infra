@@ -287,7 +287,7 @@ One-shot deterministic smoke test:
 ./build_i8mm/mollm_chat \
     --package qwen35_4b_w4g128.mollm \
     --prompt "请只输出一句话，不要解释：杭州有什么特点？" \
-    --max-new-tokens 64 \
+    --max-new-tokens 65 \
     --threads 4 \
     --temperature 0
 ```
@@ -340,7 +340,7 @@ Standard mollm benchmark:
 ./build_i8mm/mollm_bench \
     --package qwen35_4b_w4g128.mollm \
     --prompt-tokens 256 \
-    --max-new-tokens 64 \
+    --max-new-tokens 65 \
     --warmup 3 \
     --threads 4
 ```
