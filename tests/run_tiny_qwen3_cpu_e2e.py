@@ -102,7 +102,7 @@ def build_qwen35_fixture_model(
     hidden = 32
     head_dim = 8
     linear_heads = 2
-    linear_value_heads = 2
+    linear_value_heads = 4
     linear_k_dim = 8
     linear_v_dim = 8
     qkv_total = linear_heads * linear_k_dim * 2 + linear_value_heads * linear_v_dim

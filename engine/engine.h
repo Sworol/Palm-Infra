@@ -264,6 +264,10 @@ public:
     void reset_profiles();
     const ExecContext& prefill_exec_ctx() const { return exec_ctx_prefill_; }
     const ExecContext& decode_exec_ctx() const { return exec_ctx_decode_; }
+    const ExecContext& mtp_exec_ctx() const { return exec_ctx_mtp_; }
+    const ExecContext& mtp_verify_exec_ctx() const {
+        return exec_ctx_mtp_verify_;
+    }
 
     /// BufferPool memory stats (for leak detection in benchmarks).
     /// Returns {active_bytes, peak_bytes, acquire_count, release_count} from the prefill graph's pool.

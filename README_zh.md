@@ -225,7 +225,7 @@ W4 转换需要 C++ 构建的 `mollm-quantize` 工具；FP16 和 W8 不需要。
 ./build_i8mm/mollm_chat \
     --package qwen35_4b_w4g128.mollm \
     --prompt "请只输出一句话，不要解释：杭州有什么特点？" \
-    --max-new-tokens 64 \
+    --max-new-tokens 65 \
     --threads 4 \
     --temperature 0
 ```
@@ -267,7 +267,7 @@ tower 带来的包体与常驻内存开销。
 ./build_i8mm/mollm_bench \
     --package qwen35_4b_w4g128.mollm \
     --prompt-tokens 256 \
-    --max-new-tokens 64 \
+    --max-new-tokens 65 \
     --warmup 3 \
     --threads 4
 ```
