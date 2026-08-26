@@ -111,8 +111,7 @@ python3 models/converter.py /path/to/Qwen3.5-4B qwen35_4b_w4g128.mollm w4g128
 
 - macOS/Apple Silicon、ARM Linux 或 Linux x86_64
 - CMake 与 Ninja 或 Make
-- Python 3
-- 转换所需的 Python 包，主要是 `numpy` 与 `safetensors`
+- Python 3，以及用于模型转换的 `numpy`
 
 推荐构建方式：
 
