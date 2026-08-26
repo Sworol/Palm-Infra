@@ -157,8 +157,7 @@ Requirements:
 
 - macOS/Apple Silicon, ARM Linux, or Linux x86_64
 - CMake + Ninja or Make
-- Python 3
-- Python packages needed by conversion, especially `numpy` and `safetensors`
+- Python 3 with `numpy` for model conversion
 
 Recommended local build:
 
