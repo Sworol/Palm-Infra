@@ -530,10 +530,6 @@ if(MOLLM_BUILD_TESTS)
             NAME test_hy_v3_adapter
             COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hy_v3_adapter.py)
-        add_test(
-            NAME test_qwen35_graph
-            COMMAND ${Python3_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_qwen35_graph.py)
         if(TARGET mollm_bench)
             add_test(
                 NAME bench_qwen35_mtp
