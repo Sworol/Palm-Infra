@@ -822,9 +822,11 @@ Tensor LLMEngine::verify_target_tokens(
     if (output.data && output.prec == Precision::FP32 &&
         output.shape[1] == 2 &&
         !exec_ctx_mtp_verify_.backend->dispatch_failed()) {
-        copied = copy_tensor_contiguous(output, hidden_output_copy_);
+        copied = copy_tensor_contiguous(output, hidden_output_copy_,
+                                        exec_ctx_mtp_verify_.backend);
         Tensor target_hidden =
-            capture_mtp_target_hidden(graph_mtp_verify_, output);
+            capture_mtp_target_hidden(graph_mtp_verify_, output,
+                                      exec_ctx_mtp_verify_.backend);
         if (!target_hidden.data || target_hidden.shape[1] != 2)
             copied = Tensor();
     }
@@ -860,7 +862,8 @@ Tensor LLMEngine::verify_target_tokens(
 }
 
 Tensor LLMEngine::capture_mtp_target_hidden(Graph& graph,
-                                             const Tensor& fallback) {
+                                             const Tensor& fallback,
+                                             Backend* backend) {
     const Tensor* source = &fallback;
     auto metadata = graph.metadata.find("mtp_hidden_output_id");
     if (metadata != graph.metadata.end()) {
@@ -874,7 +877,7 @@ Tensor LLMEngine::capture_mtp_target_hidden(Graph& graph,
     }
     if (!source->data || source->prec != Precision::FP32)
         return Tensor();
-    return copy_tensor_contiguous(*source, mtp_target_hidden_copy_);
+    return copy_tensor_contiguous(*source, mtp_target_hidden_copy_, backend);
 }
 
 Tensor LLMEngine::current_mtp_target_hidden(int tokens) {
@@ -1405,7 +1408,8 @@ Tensor LLMEngine::prefill_hidden(const std::vector<int>& token_ids,
         copied = copy_tensor_contiguous(
             out, hidden_output_copy_, exec_ctx_prefill_.backend);
         if (has_mtp() && cfg_.mtp_draft_tokens > 0 &&
-            !capture_mtp_target_hidden(graph_prefill_, out).data) {
+            !capture_mtp_target_hidden(graph_prefill_, out,
+                                       exec_ctx_prefill_.backend).data) {
             copied = Tensor();
         }
     }
@@ -1535,7 +1539,8 @@ int LLMEngine::prefill_chunk(const std::vector<int>& token_ids, int past) {
     }
 
     if (has_mtp() && cfg_.mtp_draft_tokens > 0) {
-        Tensor verified = capture_mtp_target_hidden(graph_prefill_, out);
+        Tensor verified = capture_mtp_target_hidden(
+            graph_prefill_, out, exec_ctx_prefill_.backend);
         if (!verified.data || !sync_mtp(token_ids, verified, past)) {
             fprintf(stderr, "prefill_chunk: failed to synchronize MTP state\n");
             release_pool_tensor(graph_prefill_.runtime.pool, h);
@@ -1614,7 +1619,8 @@ int LLMEngine::decode(int token_id) {
     }
 
     if (has_mtp() && cfg_.mtp_draft_tokens > 0) {
-        Tensor verified = capture_mtp_target_hidden(graph_decode_, out);
+        Tensor verified = capture_mtp_target_hidden(
+            graph_decode_, out, exec_ctx_decode_.backend);
         if (!verified.data ||
             !sync_mtp(std::vector<int>{token_id}, verified, past_len_)) {
             fprintf(stderr, "decode: failed to synchronize MTP state\n");
@@ -1979,7 +1985,8 @@ Tensor LLMEngine::decode_hidden(int token_id) {
         copied = copy_tensor_contiguous(
             out, hidden_output_copy_, exec_ctx_decode_.backend);
         if (has_mtp() && cfg_.mtp_draft_tokens > 0 &&
-            !capture_mtp_target_hidden(graph_decode_, out).data) {
+            !capture_mtp_target_hidden(graph_decode_, out,
+                                       exec_ctx_decode_.backend).data) {
             copied = Tensor();
         }
     }

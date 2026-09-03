@@ -472,7 +472,8 @@ private:
                                 int position, std::vector<float>* logits,
                                 std::vector<int>* top1);
     void set_cache_length(std::vector<CachePair>& caches, int length);
-    Tensor capture_mtp_target_hidden(Graph& graph, const Tensor& fallback);
+    Tensor capture_mtp_target_hidden(Graph& graph, const Tensor& fallback,
+                                     Backend* backend);
     Tensor current_mtp_target_hidden(int tokens);
 
     /// Transactional public-load implementation and shared teardown path.

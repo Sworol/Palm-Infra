@@ -310,7 +310,6 @@ int main(int argc, char** argv) {
                      "<qwen35-reject.mollm> <qwen35-accept.mollm>\n"
                      "       %s --real-model <dense.mollm>\n",
                      argv[0], argv[0]);
-                     argv[0]);
         return 2;
     }
 
