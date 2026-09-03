@@ -103,11 +103,20 @@ current three-process median on a real ChatML prompt with 16 prompt tokens,
 256 generated tokens, `warmup=0`, and the same cache size. See [SSD
 offload](ssd-offload.md) for the cache sweep and I/O protocol.
 
-## Native FP8 + MXFP4
+## Native FP8 / MXFP4 / NVFP4
 
 | Model | mollm pp/tg | llama.cpp pp/tg | Result |
 |---|---:|---:|---|
+| Qwen3.8-Flash-Next NVFP4 (SSD offload) | **16.2** / **21.8** § | — | mollm only |
 | DeepSeek-V4-Flash (SSD offload) | **9.52** / **5.71** ‡ | 0 / 0 | llama.cpp OOM |
+
+§ Best observed real-prompt interactive run, using eight CPU threads and a
+20 GiB expert cache; it is not a five-process strict median. For a controlled
+four-thread / 16 GiB comparison, a 52-token real Chinese prompt with 64
+generated tokens and `warmup=0` produced a five-process median of 18.70 pp /
+15.74 tg, 22.0 GiB peak RSS, and 206.6 MB of logical expert loads per generated
+token. The synthetic warm-cache `pp256 + tg64`, `warmup=3` median was 21.37 pp /
+22.21 tg, with no SSD cache misses during its timed phase.
 
 ‡ Provisional single-process result using four CPU threads, `pp256 + tg64`,
 `warmup=3`, and a 16 GiB expert RAM cache. This is not yet the usual

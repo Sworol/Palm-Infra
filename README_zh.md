@@ -20,14 +20,18 @@ mobile-oriented LLM inference engine.
 ## 使用 SSD offload 运行大规模 MoE 模型
 
 `mollm` 将稠密权重保留在 RAM 中，只把命中的路由 expert 从 SSD 装入有界的
-共享 cache。同一套异步 offload 路径同时支持 W4 模型和
-DeepSeek-V4-Flash 的原生 FP8/MXFP4 权重。
+共享 cache。同一套异步 offload 路径同时支持 W4 模型以及 checkpoint 原生的
+FP8/MXFP4 和 NVFP4 expert。
 
 | 模型 | Expert cache | Prefill | Decode |
 |---|---:|---:|---:|
 | Qwen3.5-122B-A10B W4 | 16 GiB | **51.06 t/s** | **16.53 t/s** |
+| Qwen3.8-Flash-Next NVFP4 | 20 GiB | **16.2 t/s** | **21.8 t/s** † |
 | DeepSeek-V4-Flash | 16 GiB | **9.52 t/s** | **5.71 t/s** |
 | Hy3-295B-A21B W4G128 | 16 GiB | **10.57 t/s** | **3.41 t/s** |
+
+† 真实 prompt 下观察到的最好结果，使用 8 CPU threads 和 20 GiB
+expert cache；其他行使用各自注明的 4-thread / 16-GiB 协议。
 
 [Cache sweep、I/O 行为与 tracing](docs/ssd-offload.md) ·
 [完整性能表与测试协议](docs/performance.md)
@@ -40,6 +44,7 @@ DeepSeek-V4-Flash 的原生 FP8/MXFP4 权重。
 | Qwen3-30B-A3B MoE | 仅文本 W4 路径 |
 | Qwen3.6-35B-A3B MoE | 仅文本 W4 路径 |
 | Qwen3.5-122B-A10B MoE | CPU W4，支持 SSD expert offload |
+| Qwen3.8-Flash-Next | 仅文本 CPU 推理，支持原生 NVFP4 expert SSD offload |
 | Tencent Hy-MT2-30B-A3B | 仅文本 W4 MoE；支持 CPU 与 Metal |
 | Tencent Hy3-295B-A21B | 仅文本 W4 MoE，支持 CPU SSD expert offload |
 | Qwen3.5-0.8B / Qwen3.5-4B | FP16、W8、W4、混合 W4；实验性单图视觉输入 |
@@ -164,12 +169,26 @@ python3 models/deepseek_v4.py \
     --ssd-cache-mb 10240 --ssd-io-workers 8 --threads 6
 ```
 
+Qwen3.8-Flash-Next 转换会保留 checkpoint 的 NVFP4 路由 expert，
+将稠密权重离线量化为 W4G32，并将 `lm_head` 保存为 per-channel W8：
+
+```bash
+python3 models/converter.py \
+    /path/to/Qwen3.8-Flash-Next-NVFP4 \
+    qwen38_flash_next_nvfp4.mollm
+
+./build_i8mm/mollm_chat \
+    --package qwen38_flash_next_nvfp4.mollm \
+    --ssd-cache-mb 16384 --ssd-io-workers 8 --threads 4
+```
+
 | `model_type` | 支持的模型 |
 |---|---|
 | `qwen3` | Qwen3 dense text models |
 | `qwen3_moe` | Qwen3 MoE text models |
 | `qwen3_5` | Qwen3.5 dense text 与单图视觉模型 |
 | `qwen3_5_moe` | Qwen3.5/3.6 MoE text models |
+| `qwen4_exp` | Qwen3.8-Flash-Next 文本模型，保留原生 NVFP4 expert |
 | `hy_v3` | Tencent HY-V3 / Hy-MT2 MoE text models |
 | `youtu` | Youtu-LLM MLA models |
 | `deepseek_v4` | 直接使用实验性的 `models/deepseek_v4.py` converter。 |
@@ -186,6 +205,9 @@ python3 models/deepseek_v4.py \
 DeepSeek-V4-Flash 不使用上述转换量化模式：其中量化的稠密/共享 expert
 权重采用 checkpoint 原生 FP8 E4M3 block-128，路由 expert 采用
 MXFP4 E2M1/E8M0 group-32。
+
+Qwen3.8-Flash-Next 使用 checkpoint 原生 NVFP4 路由 expert、离线
+W4G32 稠密权重和 per-channel W8 `lm_head`。
 
 W4 转换需要 C++ 构建的 `mollm-quantize` 工具；FP16 和 W8 不需要。prefill
 图内部以 256 token 为分块大小，但 CPU runtime 使用 dynamic prefill；除非

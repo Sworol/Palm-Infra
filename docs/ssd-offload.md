@@ -1,11 +1,11 @@
 # Running Large MoE models with SSD offload
 
-mollm runs Qwen3.5-122B-A10B, DeepSeek-V4-Flash, and Hy3-295B-A21B on a 48GB
-Apple Silicon Mac without keeping the complete model resident. Always-used
-dense weights stay locked in RAM, while asynchronous `pread` workers fetch only
-the routed MoE expert pairs from the package. A bounded RAM cache, configured
-with `--ssd-cache-mb`, retains recently
-used expert pairs.
+mollm runs Qwen3.5-122B-A10B, Qwen3.8-Flash-Next, DeepSeek-V4-Flash, and
+Hy3-295B-A21B on a 48GB Apple Silicon Mac without keeping the complete model
+resident. Always-used dense weights stay locked in RAM, while asynchronous
+`pread` workers fetch only the routed MoE expert pairs from the package. A
+bounded RAM cache, configured with `--ssd-cache-mb`, retains recently used
+expert pairs.
 
 ## Cache policy
 
@@ -81,6 +81,14 @@ logical application-level quantities rather than physical NAND traffic.
 
 Cache capacity must leave room for dense weights, KV cache, runtime buffers, and
 other applications.
+
+Qwen3.8-Flash-Next NVFP4 reaches a best observed 16.2 prefill and 21.8 decode
+tokens/s in real-prompt interactive generation with eight CPU threads and a
+20 GiB expert cache. This is not a strict five-process median. A controlled
+four-thread / 16 GiB real-prompt run reaches a five-process median of 18.70 pp /
+15.74 tg; its 64-token decode loads 206.6 MB of logical expert data per token.
+The synthetic warm-cache run reaches 21.37 pp / 22.21 tg but has no timed SSD
+cache misses.
 
 ## Trace SSD overlap
 

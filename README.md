@@ -34,13 +34,17 @@ testing or machine-specific tuning. The legacy
 
 `mollm` keeps dense weights in RAM and loads only routed experts from SSD into
 a bounded shared cache. The same asynchronous offload path supports W4 models
-as well as DeepSeek-V4-Flash's native FP8/MXFP4 weights.
+as well as checkpoint-native FP8/MXFP4 and NVFP4 experts.
 
 | Model | Expert cache | Prefill | Decode |
 |---|---:|---:|---:|
 | Qwen3.5-122B-A10B W4 | 16 GiB | **51.06 t/s** | **16.53 t/s** |
+| Qwen3.8-Flash-Next NVFP4 | 20 GiB | **16.2 t/s** | **21.8 t/s** † |
 | DeepSeek-V4-Flash | 16 GiB | **9.52 t/s** | **5.71 t/s** |
 | Hy3-295B-A21B W4G128 | 16 GiB | **10.57 t/s** | **3.41 t/s** |
+
+† Best observed real-prompt run with eight CPU threads and a 20 GiB expert
+cache; the other rows use their documented four-thread / 16 GiB protocols.
 
 [Cache sweeps, I/O behavior, and tracing](docs/ssd-offload.md) ·
 [Complete performance tables and protocols](docs/performance.md)
@@ -53,6 +57,7 @@ as well as DeepSeek-V4-Flash's native FP8/MXFP4 weights.
 | Qwen3-30B-A3B MoE | text-only W4 path |
 | Qwen3.6-35B-A3B MoE | text-only W4 path |
 | Qwen3.5-122B-A10B MoE | CPU W4 with SSD expert offload |
+| Qwen3.8-Flash-Next | text-only CPU inference with native NVFP4 expert SSD offload |
 | Tencent Hy-MT2-30B-A3B | text-only W4 MoE; CPU and Metal |
 | Tencent Hy3-295B-A21B | text-only W4 MoE with CPU SSD expert offload |
 | Qwen3.5-0.8B / Qwen3.5-4B | FP16, W8, W4, mixed W4; experimental single-image vision |
@@ -217,6 +222,19 @@ python3 models/deepseek_v4.py \
     --ssd-cache-mb 10240 --ssd-io-workers 8 --threads 6
 ```
 
+Qwen3.8-Flash-Next conversion preserves the checkpoint's NVFP4 routed experts,
+quantizes dense weights to W4G32, and stores `lm_head` as per-channel W8:
+
+```bash
+python3 models/converter.py \
+    /path/to/Qwen3.8-Flash-Next-NVFP4 \
+    qwen38_flash_next_nvfp4.mollm
+
+./build_i8mm/mollm_chat \
+    --package qwen38_flash_next_nvfp4.mollm \
+    --ssd-cache-mb 16384 --ssd-io-workers 8 --threads 4
+```
+
 Supported `config.json` model types:
 
 | `model_type` | Supported models |
@@ -225,6 +243,7 @@ Supported `config.json` model types:
 | `qwen3_moe` | Qwen3 MoE text models |
 | `qwen3_5` | Qwen3.5 dense text and single-image vision models |
 | `qwen3_5_moe` | Qwen3.5/3.6 MoE text models |
+| `qwen4_exp` | Qwen3.8-Flash-Next text model with native NVFP4 experts |
 | `hy_v3` | Tencent HY-V3 / Hy-MT2 MoE text models |
 | `youtu` | Youtu-LLM MLA models |
 | RWKV7 `.pth` | Use `models/rwkv7.py` directly. |
@@ -246,6 +265,8 @@ Notes:
 - DeepSeek-V4-Flash uses checkpoint-native FP8 E4M3 block-128 quantized
   dense/shared-expert weights and MXFP4 E2M1/E8M0 group-32 routed experts
   instead of the conversion modes above.
+- Qwen3.8-Flash-Next uses checkpoint-native NVFP4 routed experts, offline
+  W4G32 dense weights, and a per-channel W8 `lm_head`.
 - W4 conversion requires the `mollm-quantize` helper built from C++.
 - FP16 and W8 conversion do not require that helper.
 - The prefill graph is built with an internal 256-token chunk size, but CPU
