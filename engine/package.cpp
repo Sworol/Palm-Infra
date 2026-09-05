@@ -253,7 +253,14 @@ bool parse_package_header(const uint8_t* header, size_t file_size,
         fprintf(stderr, "Engine: package MTP graph has invalid length\n");
         return false;
     }
-    out.mtp_off = out.w_off - out.mtp_len;
+    // The writer may align weights, leaving padding after the MTP bundle.
+    // MTP therefore starts after the preceding graph sections, not at
+    // `weights_offset - mtp_length`.
+    if (!checked_add(out.dc_off, out.dc_len, out.mtp_off) ||
+        !checked_add(out.mtp_off, out.vi_len, out.mtp_off)) {
+        fprintf(stderr, "Engine: package MTP graph offset overflows\n");
+        return false;
+    }
 
     if (!section_in_file(out.meta_off, out.meta_len, file_size, "metadata") ||
         !section_in_file(out.tok_off, out.tok_len, file_size, "tokenizer") ||
