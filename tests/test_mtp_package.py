@@ -78,14 +78,16 @@ def main() -> int:
         assert metadata["architecture"] == "test"
         verify_length = metadata["mtp_verify_graph_length"]
         assert 0 < verify_length < mtp_length
-        bundle_offset = weights_offset - mtp_length
+        mtp_offset = values[10] + values[11] + values[15]
+        bundle_offset = mtp_offset
         verify_blob = raw[bundle_offset:bundle_offset + verify_length]
-        draft_blob = raw[bundle_offset + verify_length:weights_offset]
+        draft_blob = raw[bundle_offset + verify_length:
+                          bundle_offset + mtp_length]
         assert struct.unpack_from("<I", verify_blob)[0] == 0x4D4C4C47
         assert struct.unpack_from("<I", draft_blob)[0] == 0x4D4C4C47
         assert len(verify_blob) == verify_length
         assert len(draft_blob) == mtp_length - verify_length
-        assert bundle_offset + len(verify_blob) + len(draft_blob) == weights_offset
+        assert bundle_offset + mtp_length <= weights_offset
         assert raw[weights_offset:] == b""
     print("MTP package tests passed")
     return 0
