@@ -541,7 +541,7 @@ std::vector<float> LLMEngine::run_lmhead_raw(const Tensor& hidden, int n_tokens,
 #endif
     bool cpu_fp16_batch = true;
 #ifdef MOLLM_METAL
-    cpu_fp16_batch = !(metal_backend_ && lm_head_weight_->device_data);
+    cpu_fp16_batch = !(accelerator_backend_ && lm_head_weight_->device_data);
 #endif
     if (all_positions && n_pos == 2 && hidden.shape[1] >= 2 &&
         hidden.is_contiguous() &&
