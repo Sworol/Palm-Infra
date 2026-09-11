@@ -1426,7 +1426,7 @@ int main() {
     // ---- Default W8A16 prefill GEMM ----------------------------------------
     // Cover both cooperative output-tile specializations. The second shape
     // deliberately trips the large-projection M128 dispatch rule.
-    {
+    if (mb.has_tensor_path()) {
         // Initialize the diagnostic W8A8 switch before its first dispatch.
         // These cases use two identical scale groups, which intentionally
         // selects the production W8A16 path even while W8A8 is enabled.
@@ -1494,12 +1494,15 @@ int main() {
             CHECK(close((const float*)C.data, ref.data(), M*N,
                         1e-2f, 3e-2f), label);
         }
+    } else {
+        std::printf("  SKIP: W8A16 prefill GEMM requires the Metal 4 tensor "
+                    "path (M5/A19+ and compatible toolchain)\n");
     }
 
     // ---- W4A16 prefill GEMM (generic G32/G64 and specialized G128) -----------
     // Both variants use the decoded offset-binary [nibbles|scales] layout.
     // Keeping G64 here guards the non-specialized function-constant path.
-    {
+    if (mb.has_tensor_path()) {
         setenv("MOLLM_METAL_W4_PREFILL_MODE", "fast", 1);
         constexpr int M = 64;
         constexpr int K = 256;
@@ -1616,6 +1619,9 @@ int main() {
                 label);
         }
         unsetenv("MOLLM_METAL_W4_PREFILL_MODE");
+    } else {
+        std::printf("  SKIP: W4A16 prefill GEMM requires the Metal 4 tensor "
+                    "path (M5/A19+ and compatible toolchain)\n");
     }
 
     // ---- Small-M W4 projection: one weight scan for M=2..4 ----------------
