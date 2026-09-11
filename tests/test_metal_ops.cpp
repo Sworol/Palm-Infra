@@ -7,6 +7,7 @@
 #include "kernels/rwkv.h"
 #include "engine/metal_backend.h"
 #include "graph/graph.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -88,7 +89,7 @@ int main() {
     MetalBackend mb;
     if (!mb.available()) {
         fprintf(stderr, "Metal not available; skipping\n");
-        return 0;  // not a failure on non-Metal CI
+        return 77;  // Report unavailable hardware as skipped, not passed.
     }
 
     // A duplicate release must not enqueue the same MTLBuffer twice. Otherwise

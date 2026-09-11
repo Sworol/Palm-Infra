@@ -13,8 +13,13 @@ jobs:
         include:
           - name: i8mm-auto
             arm_i8mm: "AUTO"
+            metal: "OFF"
           - name: no-i8mm
             arm_i8mm: "OFF"
+            metal: "OFF"
+          - name: Metal
+            arm_i8mm: "AUTO"
+            metal: "ON"
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,15 +39,24 @@ jobs:
           -DMOLLM_BUILD_TESTS=ON
           -DPython3_EXECUTABLE="$(which python)"
           -DMOLLM_ARM_I8MM=${{ matrix.arm_i8mm }}
+          -DMOLLM_METAL=${{ matrix.metal }}
       - name: Build
         run: cmake --build build -j 2
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --output-junit results.xml
       - name: Test NEON runtime fallback
-        if: matrix.arm_i8mm == 'AUTO'
+        if: matrix.arm_i8mm == 'AUTO' && matrix.metal == 'OFF'
         env:
           MOLLM_ARM_ISA: neon
         run: ctest --test-dir build --output-on-failure
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.name }}-test-results
+          path: |
+            build/results.xml
+            build/Testing/Temporary/LastTest.log
 
   x86-build-and-test:
     name: Linux x86_64 (runtime ISA dispatch)
@@ -103,13 +117,15 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   cuda-build:
-    name: Linux x86_64 (CUDA compile)
+    name: Linux x86_64 (CUDA compile + CPU tests)
     runs-on: ubuntu-latest
     container: nvidia/cuda:12.8.1-devel-ubuntu24.04
     steps:
       - name: Install build tools
-        run: apt-get update && apt-get install -y --no-install-recommends cmake g++ git
+        run: apt-get update && apt-get install -y --no-install-recommends cmake g++ git python3 python3-numpy
       - uses: actions/checkout@v4
+      - name: Verify E2E fixture dependency
+        run: python3 -c "import numpy"
       - name: Configure
         run: >
           cmake -S . -B build
@@ -117,13 +133,24 @@ jobs:
           -DMOLLM_CUDA=ON
           -DMOLLM_BUILD_TESTS=ON
           -DMOLLM_BUILD_EXAMPLE=ON
+          -DPython3_EXECUTABLE=/usr/bin/python3
           -DCMAKE_CUDA_ARCHITECTURES=80
       - name: Build
         run: cmake --build build -j 2
-      - name: CUDA API and package tests
+      # Hosted runners have no CUDA device. Backend runtime tests report a
+      # skip; the CPU, converter, fallback-policy and package tests still run.
+      - name: Test CUDA-enabled build
         run: >
           ctest --test-dir build --output-on-failure
-          -R 'test_cuda_backend|test_package_install'
+          --output-junit results.xml
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-build-test-results
+          path: |
+            build/results.xml
+            build/Testing/Temporary/LastTest.log
 
   linux-arm64-build-and-test:
     name: Linux ARM64 (${{ matrix.name }})

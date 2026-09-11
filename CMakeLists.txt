@@ -558,6 +558,7 @@ if(MOLLM_BUILD_TESTS)
 
     if(MOLLM_METAL)
         add_mollm_test(test_metal_ops tests/test_metal_ops.cpp)
+        set_tests_properties(test_metal_ops PROPERTIES SKIP_RETURN_CODE 77)
 
         # Developer-only microbenchmark for the decode-time Metal SSD-MoE
         # selected-expert kernel. It is intentionally not registered with
